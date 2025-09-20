@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"image/color"
 	"io/fs"
-	"log"
 	"os"
 
 	"fyne.io/fyne/v2"
@@ -23,21 +22,17 @@ func main() {
 	}()
 }
 
-var root = "/Users/mac/study/go_file_manager"
+var root, _ = os.Getwd()
 var fileSystem = os.DirFS(root)
 
 func walkDir(currentPath string) []fs.DirEntry {
-	fileList := make([]fs.DirEntry, 0)
+	entries, err := os.ReadDir(root + "/" + currentPath)
 
-	fs.WalkDir(fileSystem, currentPath, func(path string, dirEntry fs.DirEntry, err error) error {
-		if err != nil {
-			log.Fatal(err)
-		}
-		fileList = append(fileList, dirEntry)
-		return nil
-	})
+	if err != nil {
+		panic(err)
+	}
 
-	return fileList
+	return entries
 }
 
 type UserState struct {
@@ -59,6 +54,12 @@ func runApp() {
 
 		for _, fsEntry := range fsEntries {
 			btnLabel := fsEntry.Name()
+			isFolder := fsEntry.IsDir()
+
+			if isFolder {
+				btnLabel = "[Folder] " + btnLabel
+			}
+
 			btnCallback := createBtnCallBack(fsEntry)
 
 			btn := widget.NewButton(btnLabel, func() {
