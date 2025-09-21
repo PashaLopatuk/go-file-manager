@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"image/color"
 	"io/fs"
+	"os/exec"
+	"runtime"
 
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
@@ -59,6 +62,23 @@ func (s *AppState) changeDir(entry fs.DirEntry) {
 	s.render()
 }
 
+func openFileDefault(filepath string) error {
+	var cmd *exec.Cmd
+
+	switch runtime.GOOS {
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "", filepath)
+	case "darwin":
+		cmd = exec.Command("open", filepath)
+	case "linux":
+		cmd = exec.Command("xdg-open", filepath)
+	default:
+		return fmt.Errorf("unsupported operating system: %s", runtime.GOOS)
+	}
+
+	return cmd.Run()
+}
+
 func (s *AppState) render() {
 	green := color.NRGBA{0, 180, 0, 255}
 	header := canvas.NewText("Current dir: "+s.currentPath, green)
@@ -68,17 +88,21 @@ func (s *AppState) render() {
 
 	for _, entry := range entries {
 		label := entry.Name()
-		if entry.IsDir() {
-			label = "[Folder] " + label
-		}
 
 		ent := entry
 		btn := widget.NewButton(label, func() {
 			fmt.Printf("Clicked on: %s\n", ent.Name())
 			if ent.IsDir() {
 				s.changeDir(ent)
+			} else {
+				openFileDefault(s.currentPath + "/" + label)
 			}
 		})
+
+		if entry.IsDir() {
+			btn.SetIcon(theme.FolderIcon())
+		}
+
 		buttons = append(buttons, btn)
 	}
 
@@ -97,5 +121,9 @@ func (s *AppState) render() {
 		container.NewVBox(buttons...),
 	)
 
-	s.window.SetContent(content)
+	scrollContainer := container.NewScroll(content)
+
+	scrollContainer.SetMinSize(fyne.NewSize(600, 400))
+
+	s.window.SetContent(scrollContainer)
 }
