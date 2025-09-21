@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -49,6 +50,10 @@ func (s *AppState) walkDir() []fs.DirEntry {
 		fmt.Println("Error reading dir:", err)
 		return nil
 	}
+	sort.Slice(entries, func(i int, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
+
 	return entries
 }
 
@@ -100,7 +105,7 @@ func (s *AppState) render() {
 			return len(s.entries) + 2, 3
 		},
 		func() fyne.CanvasObject {
-			return widget.NewLabel("cell")
+			return widget.NewLabel("")
 		},
 		func(id widget.TableCellID, cell fyne.CanvasObject) {
 
