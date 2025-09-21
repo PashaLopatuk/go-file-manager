@@ -2,27 +2,25 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"io/fs"
-	"os/exec"
-	"runtime"
-
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
-	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
 
 type AppState struct {
 	currentPath string
 	window      fyne.Window
+	entries     []fs.DirEntry
+	table       *widget.Table
 }
 
 const Root = "/"
@@ -40,6 +38,7 @@ func main() {
 
 	state.render()
 
+	myWindow.Resize(fyne.NewSize(800, 600))
 	myWindow.ShowAndRun()
 }
 
@@ -47,7 +46,8 @@ func (s *AppState) walkDir() []fs.DirEntry {
 	fullPath := filepath.Join(Root, s.currentPath)
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
-		panic(err)
+		fmt.Println("Error reading dir:", err)
+		return nil
 	}
 	return entries
 }
@@ -80,50 +80,111 @@ func openFileDefault(filepath string) error {
 }
 
 func (s *AppState) render() {
-	green := color.NRGBA{0, 180, 0, 255}
-	header := canvas.NewText("Current dir: "+s.currentPath, green)
+	headerPathInput := widget.NewEntry()
+	headerPathInput.SetText(s.currentPath)
 
-	entries := s.walkDir()
-	buttons := make([]fyne.CanvasObject, 0, len(entries))
+	headerPathInput.Resize(fyne.NewSize(2000, headerPathInput.Size().Height))
 
-	for _, entry := range entries {
-		label := entry.Name()
-
-		ent := entry
-		btn := widget.NewButton(label, func() {
-			fmt.Printf("Clicked on: %s\n", ent.Name())
-			if ent.IsDir() {
-				s.changeDir(ent)
-			} else {
-				openFileDefault(s.currentPath + "/" + label)
-			}
-		})
-
-		if entry.IsDir() {
-			btn.SetIcon(theme.FolderIcon())
-		}
-
-		buttons = append(buttons, btn)
-	}
-
-	backBtn := widget.NewButton("..", func() {
-		pathSplit := strings.Split(s.currentPath, "/")
-
-		backPath := strings.Join(pathSplit[0:len(pathSplit)-1], "/")
-		s.currentPath = backPath
+	goBtn := widget.NewButton("Go!", func() {
+		path := headerPathInput.Text
+		s.currentPath = path
 		s.render()
 	})
 
-	content := container.New(
-		layout.NewVBoxLayout(),
-		header,
-		backBtn,
-		container.NewVBox(buttons...),
+	headerBox := container.NewVBox(headerPathInput, goBtn)
+
+	s.entries = s.walkDir()
+
+	s.table = widget.NewTable(
+		func() (int, int) {
+			return len(s.entries) + 2, 3
+		},
+		func() fyne.CanvasObject {
+			return widget.NewLabel("cell")
+		},
+		func(id widget.TableCellID, cell fyne.CanvasObject) {
+
+			label := cell.(*widget.Label)
+
+			if id.Row == 0 {
+				switch id.Col {
+				case 0:
+					label.SetText("Name")
+				case 1:
+					label.SetText("Type")
+				case 2:
+					label.SetText("Size (bytes)")
+				}
+				label.TextStyle = fyne.TextStyle{Bold: true}
+			} else if id.Row == 1 {
+				switch id.Col {
+				case 0:
+					label.SetText("..")
+				case 1:
+					label.SetText("Folder")
+				case 2:
+					label.SetText("")
+				}
+
+			} else {
+				entry := s.entries[id.Row-2]
+				info, _ := entry.Info()
+
+				switch id.Col {
+				case 0:
+					label.SetText(entry.Name())
+				case 1:
+					if entry.IsDir() {
+						label.SetText("Folder")
+					} else {
+						label.SetText("File")
+					}
+				case 2:
+					if info != nil && !entry.IsDir() {
+						label.SetText(strconv.FormatInt(info.Size(), 10))
+					} else {
+						label.SetText("-")
+					}
+				}
+				label.TextStyle = fyne.TextStyle{}
+			}
+		},
 	)
 
-	scrollContainer := container.NewScroll(content)
+	s.table.SetColumnWidth(0, 400)
+	s.table.SetColumnWidth(1, 100)
+	s.table.SetColumnWidth(2, 100)
 
-	scrollContainer.SetMinSize(fyne.NewSize(600, 400))
+	s.table.OnSelected = func(id widget.TableCellID) {
+		fmt.Printf("OnSelected: %v", id)
 
-	s.window.SetContent(scrollContainer)
+		s.table.Unselect(id)
+
+		if id.Row == 1 {
+			pathSplit := strings.Split(s.currentPath, string(os.PathSeparator))
+			if len(pathSplit) > 1 {
+				backPath := strings.Join(pathSplit[0:len(pathSplit)-1], string(os.PathSeparator))
+				if backPath == "" {
+					backPath = string(os.PathSeparator)
+				}
+				s.currentPath = backPath
+				s.render()
+			}
+			return
+		} else if id.Row == 2 {
+			return
+		}
+		entry := s.entries[id.Row-1]
+		fmt.Printf("entry: %v", entry)
+		if entry.IsDir() {
+			s.changeDir(entry)
+		} else {
+			fullPath := filepath.Join(s.currentPath, entry.Name())
+			openFileDefault(fullPath)
+		}
+
+	}
+
+	content := container.NewBorder(headerBox, nil, nil, nil, s.table)
+	s.window.SetContent(content)
 }
